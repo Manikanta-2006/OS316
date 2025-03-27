@@ -29,6 +29,7 @@ class SecurityLogViewer:
 
         self.tree.pack(fill=tk.BOTH, expand=True)
 
+
         # Control frame
         control_frame = tk.Frame(self.root)
         control_frame.pack(fill=tk.X, pady=5)
