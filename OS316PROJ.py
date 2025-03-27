@@ -6,104 +6,125 @@ import win32security
 import time
 import threading
 
-MAX_LOGS = 500  # Max logs to keep
+# Max logs to keep in the table
+MAX_LOGS = 500
+
+# Event ID Mapping (basic event types)
+EVENT_TYPES = {
+    4624: "Successful Login",
+    4625: "Failed Login",
+    4634: "Logoff",
+    4672: "Admin Privilege Login",
+    4688: "Process Creation",
+    4689: "Process Termination",
+    4719: "Audit Policy Change",
+    4720: "User Account Created",
+    4722: "User Account Enabled",
+    4725: "User Account Disabled",
+    4728: "User Added to Group",
+    4732: "User Added to Privileged Group",
+    4740: "User Account Locked",
+    4768: "Kerberos Authentication",
+    4776: "NTLM Authentication",
+    4798: "User Enumeration",
+    5379: "Credential Theft Detected",
+}
+
+# Threat levels based on event IDs
+THREAT_LEVELS = {
+    "🟢 Low": [4624, 4634, 4688, 4689],
+    "🟡 Medium": [4672, 4719, 4728, 4732],
+    "🟠 High": [4625, 4720, 4722, 4725, 4740, 4776, 4798],
+    "🔴 Critical": [5379],
+}
+
 
 class SecurityLogViewer:
     def __init__(self, root):
         self.root = root
         self.root.title("Windows Security Log Viewer")
-        self.root.geometry("1100x500")
+        self.root.geometry("1200x500")
 
-        self.refresh_rate = 3000  # Default refresh rate (3 seconds)
+        self.refresh_rate = 2000  # Faster refresh (2 seconds)
         self.create_widgets()
         self.running = True
         self.start_logging()
 
     def create_widgets(self):
-        columns = ("Time", "Event ID", "User", "Message")
+        columns = ("Time", "Event ID", "Event Type", "User", "Threat", "Message")
         self.tree = ttk.Treeview(self.root, columns=columns, show="headings")
 
         for col in columns:
             self.tree.heading(col, text=col)
-            self.tree.column(col, width=250)
+            self.tree.column(col, width=180 if col != "Message" else 400)
 
         self.tree.pack(fill=tk.BOTH, expand=True)
 
-        # Control Frame
-        control_frame = tk.Frame(self.root)
-        control_frame.pack(fill=tk.X, pady=5)
+    def get_threat_level(self, event_id):
+        """Determines the threat level based on event ID."""
+        for level, ids in THREAT_LEVELS.items():
+            if event_id in ids:
+                return level
+        return "⚪ Unknown"
 
-        tk.Label(control_frame, text="Refresh Timer (ms):").pack(side=tk.LEFT, padx=5)
-        self.refresh_timer = tk.Spinbox(control_frame, from_=1000, to=10000, increment=500, command=self.update_refresh_rate)
-        self.refresh_timer.pack(side=tk.LEFT)
-        self.refresh_timer.insert(0, str(self.refresh_rate))
-
-        self.clear_button = tk.Button(control_frame, text="Clear", command=self.clear_table)
-        self.clear_button.pack(side=tk.RIGHT, padx=5)
-
-    def update_refresh_rate(self):
-        """Updates the refresh rate based on user input."""
-        try:
-            self.refresh_rate = int(self.refresh_timer.get())
-        except ValueError:
-            self.refresh_rate = 3000  # Default to 3s if invalid input
-
-    def clear_table(self):
-        """Removes all logs from the table."""
-        for row in self.tree.get_children():
-            self.tree.delete(row)
-
-    def get_latest_security_log(self):
-        """Fetches the latest security log from Windows Event Viewer."""
+    def get_security_logs(self):
+        """Fetches the most recent security event from Windows Event Viewer."""
         try:
             hand = win32evtlog.OpenEventLog(None, "Security")
             flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
             events = win32evtlog.ReadEventLog(hand, flags, 0)
-
             log = None
+
             if events:
-                event = events[0]  # Only fetch the latest event
+                event = events[0]  # Get the latest event
                 time_generated = event.TimeGenerated
                 formatted_time = f"{time_generated.hour:02}:{time_generated.minute:02}:{time_generated.second:02}.{time_generated.microsecond // 1000:03}"
-                
                 event_id = event.EventID
+                event_type = EVENT_TYPES.get(event_id, "Unknown Event")
+
                 try:
                     user = win32security.LookupAccountSid(None, event.Sid)[0]
                 except:
                     user = "SYSTEM"
-                
-                message = win32evtlogutil.SafeFormatMessage(event, "Security")
-                log = (formatted_time, event_id, user, message[:100])  # Limit message length
+
+                message = win32evtlogutil.SafeFormatMessage(event, "Security")[:100]
+                threat_level = self.get_threat_level(event_id)
+
+                log = (formatted_time, event_id, event_type, user, threat_level, message)
 
             win32evtlog.CloseEventLog(hand)
             return log
 
         except Exception as e:
-            return ("Error", "N/A", "N/A", str(e))
+            return ("Error", "N/A", "N/A", "N/A", "⚪ Unknown", str(e))
 
     def log_security_events(self):
-        """Continuously updates logs with new events."""
+        """Continuously updates the security logs in real-time."""
         while self.running:
-            log = self.get_latest_security_log()
+            log = self.get_security_logs()
             if log:
-                self.tree.insert("", 0, values=log)
-
-            # Maintain MAX_LOGS limit
-            while len(self.tree.get_children()) > MAX_LOGS:
-                last_item = self.tree.get_children()[-1]
-                self.tree.delete(last_item)
-
+                self.insert_log(log)
             time.sleep(self.refresh_rate / 1000.0)
 
+    def insert_log(self, log):
+        """Inserts a new log entry at the top while maintaining max log count."""
+        if log:
+            self.tree.insert("", 0, values=log)
+
+        while len(self.tree.get_children()) > MAX_LOGS:
+            last_item = self.tree.get_children()[-1]
+            self.tree.delete(last_item)
+
     def start_logging(self):
-        """Starts the logging thread."""
+        """Starts the background logging thread."""
         self.log_thread = threading.Thread(target=self.log_security_events, daemon=True)
         self.log_thread.start()
 
     def on_close(self):
-        """Stops logging when closing the app."""
+        """Stops logging and closes the GUI."""
         self.running = False
         self.root.destroy()
+
 
 if __name__ == "__main__":
     root = tk.Tk()
