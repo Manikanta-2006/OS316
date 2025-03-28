@@ -1,11 +1,14 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import win32evtlog
 import win32evtlogutil
 import win32security
 import time
 import threading
 import winsound
+import smtplib
+import csv
+import json
 
 # Max logs to keep in the table
 MAX_LOGS = 500
@@ -39,18 +42,39 @@ THREAT_LEVELS = {
     "🔴 Critical": [5379],
 }
 
+# Email Config (replace with actual values)
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+SENDER_EMAIL = "your_email@gmail.com"
+SENDER_PASSWORD = "your_password"
+RECIPIENT_EMAIL = "recipient_email@gmail.com"
+
 class SecurityLogViewer:
     def __init__(self, root):
         self.root = root
-        self.root.title("Windows Security Log Viewer")
+        self.root.title("Windows Security Log Viewer - v8")
         self.root.geometry("1200x600")
+        self.apply_dark_mode()
 
         self.refresh_rate = 2000  # Faster refresh (2 seconds)
         self.create_widgets()
         self.running = True
         self.start_logging()
 
+    def apply_dark_mode(self):
+        self.root.configure(bg="#2E2E2E")
+
     def create_widgets(self):
+        # Buttons Frame
+        self.button_frame = tk.Frame(self.root, bg="#2E2E2E")
+        self.button_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        self.export_csv_btn = tk.Button(self.button_frame, text="Export to CSV", command=self.export_to_csv)
+        self.export_csv_btn.pack(side=tk.LEFT, padx=5)
+
+        self.export_json_btn = tk.Button(self.button_frame, text="Export to JSON", command=self.export_to_json)
+        self.export_json_btn.pack(side=tk.LEFT, padx=5)
+
         columns = ("Time", "Event ID", "Event Type", "User", "Threat", "Message")
         self.tree = ttk.Treeview(self.root, columns=columns, show="headings")
 
@@ -92,6 +116,7 @@ class SecurityLogViewer:
 
                 if threat_level == "🔴 Critical":
                     self.alert_critical_event(log)
+                    self.send_email_alert(log)
 
             win32evtlog.CloseEventLog(hand)
             return log
@@ -115,14 +140,51 @@ class SecurityLogViewer:
             self.tree.delete(last_item)
 
     def alert_critical_event(self, log):
-        """Triggers a popup and sound alert for critical security events."""
         alert_message = f"CRITICAL SECURITY ALERT\n\nEvent: {log[2]}\nUser: {log[3]}\nTime: {log[0]}\nMessage: {log[5]}"
         
-        # Play a system alert sound
         winsound.MessageBeep(winsound.MB_ICONHAND)
-
-        # Show a pop-up alert
         messagebox.showwarning("Critical Security Event Detected!", alert_message)
+
+    def send_email_alert(self, log):
+        try:
+            subject = "🚨 Critical Security Alert Detected!"
+            body = f"""
+            CRITICAL SECURITY EVENT DETECTED!
+            -----------------------------------
+            Event: {log[2]}
+            User: {log[3]}
+            Time: {log[0]}
+            Message: {log[5]}
+            """
+            email_message = f"Subject: {subject}\n\n{body}"
+
+            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+            server.starttls()
+            server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            server.sendmail(SENDER_EMAIL, RECIPIENT_EMAIL, email_message)
+            server.quit()
+        except Exception as e:
+            print("Error sending email:", e)
+
+    def export_to_csv(self):
+        filename = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
+        if not filename:
+            return
+
+        with open(filename, "w", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow(["Time", "Event ID", "Event Type", "User", "Threat", "Message"])
+            for item in self.tree.get_children():
+                writer.writerow(self.tree.item(item, "values"))
+
+    def export_to_json(self):
+        filename = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
+        if not filename:
+            return
+
+        logs = [self.tree.item(item, "values") for item in self.tree.get_children()]
+        with open(filename, "w") as file:
+            json.dump(logs, file, indent=4)
 
     def start_logging(self):
         self.log_thread = threading.Thread(target=self.log_security_events, daemon=True)
