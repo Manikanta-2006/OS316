@@ -38,7 +38,6 @@ THREAT_LEVELS = {
     "🔴 Critical": [5379],
 }
 
-
 class SecurityLogViewer:
     def __init__(self, root):
         self.root = root
@@ -61,14 +60,12 @@ class SecurityLogViewer:
         self.tree.pack(fill=tk.BOTH, expand=True)
 
     def get_threat_level(self, event_id):
-        """Determines the threat level based on event ID."""
         for level, ids in THREAT_LEVELS.items():
             if event_id in ids:
                 return level
         return "⚪ Unknown"
 
     def get_security_logs(self):
-        """Fetches the most recent security event from Windows Event Viewer."""
         try:
             hand = win32evtlog.OpenEventLog(None, "Security")
             flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
@@ -76,7 +73,7 @@ class SecurityLogViewer:
             log = None
 
             if events:
-                event = events[0]  # Get the latest event
+                event = events[0]
                 time_generated = event.TimeGenerated
                 formatted_time = f"{time_generated.hour:02}:{time_generated.minute:02}:{time_generated.second:02}.{time_generated.microsecond // 1000:03}"
                 event_id = event.EventID
@@ -99,7 +96,6 @@ class SecurityLogViewer:
             return ("Error", "N/A", "N/A", "N/A", "⚪ Unknown", str(e))
 
     def log_security_events(self):
-        """Continuously updates the security logs in real-time."""
         while self.running:
             log = self.get_security_logs()
             if log:
@@ -107,7 +103,6 @@ class SecurityLogViewer:
             time.sleep(self.refresh_rate / 1000.0)
 
     def insert_log(self, log):
-        """Inserts a new log entry at the top while maintaining max log count."""
         if log:
             self.tree.insert("", 0, values=log)
 
@@ -116,15 +111,12 @@ class SecurityLogViewer:
             self.tree.delete(last_item)
 
     def start_logging(self):
-        """Starts the background logging thread."""
         self.log_thread = threading.Thread(target=self.log_security_events, daemon=True)
         self.log_thread.start()
 
     def on_close(self):
-        """Stops logging and closes the GUI."""
         self.running = False
         self.root.destroy()
-
 
 if __name__ == "__main__":
     root = tk.Tk()
