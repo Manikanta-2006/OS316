@@ -42,7 +42,7 @@ class SecurityLogViewer:
     def __init__(self, root):
         self.root = root
         self.root.title("Windows Security Log Viewer")
-        self.root.geometry("1200x500")
+        self.root.geometry("1200x600")
 
         self.refresh_rate = 2000  # Faster refresh (2 seconds)
         self.create_widgets()
@@ -50,6 +50,19 @@ class SecurityLogViewer:
         self.start_logging()
 
     def create_widgets(self):
+        self.search_frame = tk.Frame(self.root)
+        self.search_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        tk.Label(self.search_frame, text="Search:").pack(side=tk.LEFT)
+        self.search_entry = tk.Entry(self.search_frame)
+        self.search_entry.pack(side=tk.LEFT, padx=5)
+
+        self.search_button = tk.Button(self.search_frame, text="Filter", command=self.filter_logs)
+        self.search_button.pack(side=tk.LEFT)
+
+        self.clear_button = tk.Button(self.search_frame, text="Clear", command=self.clear_filter)
+        self.clear_button.pack(side=tk.LEFT)
+
         columns = ("Time", "Event ID", "Event Type", "User", "Threat", "Message")
         self.tree = ttk.Treeview(self.root, columns=columns, show="headings")
 
@@ -109,6 +122,23 @@ class SecurityLogViewer:
         while len(self.tree.get_children()) > MAX_LOGS:
             last_item = self.tree.get_children()[-1]
             self.tree.delete(last_item)
+
+    def filter_logs(self):
+        query = self.search_entry.get().strip().lower()
+        if not query:
+            return
+
+        for item in self.tree.get_children():
+            values = self.tree.item(item, "values")
+            if any(query in str(value).lower() for value in values):
+                self.tree.see(item)
+            else:
+                self.tree.detach(item)
+
+    def clear_filter(self):
+        for item in self.tree.get_children():
+            self.tree.reattach(item, "", "end")
+        self.search_entry.delete(0, tk.END)
 
     def start_logging(self):
         self.log_thread = threading.Thread(target=self.log_security_events, daemon=True)
