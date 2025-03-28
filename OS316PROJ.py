@@ -1,10 +1,11 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 import win32evtlog
 import win32evtlogutil
 import win32security
 import time
 import threading
+import winsound
 
 # Max logs to keep in the table
 MAX_LOGS = 500
@@ -50,19 +51,6 @@ class SecurityLogViewer:
         self.start_logging()
 
     def create_widgets(self):
-        self.search_frame = tk.Frame(self.root)
-        self.search_frame.pack(fill=tk.X, padx=5, pady=5)
-
-        tk.Label(self.search_frame, text="Search:").pack(side=tk.LEFT)
-        self.search_entry = tk.Entry(self.search_frame)
-        self.search_entry.pack(side=tk.LEFT, padx=5)
-
-        self.search_button = tk.Button(self.search_frame, text="Filter", command=self.filter_logs)
-        self.search_button.pack(side=tk.LEFT)
-
-        self.clear_button = tk.Button(self.search_frame, text="Clear", command=self.clear_filter)
-        self.clear_button.pack(side=tk.LEFT)
-
         columns = ("Time", "Event ID", "Event Type", "User", "Threat", "Message")
         self.tree = ttk.Treeview(self.root, columns=columns, show="headings")
 
@@ -102,6 +90,9 @@ class SecurityLogViewer:
 
                 log = (formatted_time, event_id, event_type, user, threat_level, message)
 
+                if threat_level == "🔴 Critical":
+                    self.alert_critical_event(log)
+
             win32evtlog.CloseEventLog(hand)
             return log
 
@@ -123,22 +114,15 @@ class SecurityLogViewer:
             last_item = self.tree.get_children()[-1]
             self.tree.delete(last_item)
 
-    def filter_logs(self):
-        query = self.search_entry.get().strip().lower()
-        if not query:
-            return
+    def alert_critical_event(self, log):
+        """Triggers a popup and sound alert for critical security events."""
+        alert_message = f"CRITICAL SECURITY ALERT\n\nEvent: {log[2]}\nUser: {log[3]}\nTime: {log[0]}\nMessage: {log[5]}"
+        
+        # Play a system alert sound
+        winsound.MessageBeep(winsound.MB_ICONHAND)
 
-        for item in self.tree.get_children():
-            values = self.tree.item(item, "values")
-            if any(query in str(value).lower() for value in values):
-                self.tree.see(item)
-            else:
-                self.tree.detach(item)
-
-    def clear_filter(self):
-        for item in self.tree.get_children():
-            self.tree.reattach(item, "", "end")
-        self.search_entry.delete(0, tk.END)
+        # Show a pop-up alert
+        messagebox.showwarning("Critical Security Event Detected!", alert_message)
 
     def start_logging(self):
         self.log_thread = threading.Thread(target=self.log_security_events, daemon=True)
